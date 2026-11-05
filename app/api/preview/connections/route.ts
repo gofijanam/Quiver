@@ -1,3 +1,4 @@
+import { sharedTiingoKey } from "@/lib/preview/tiingo-license";
 import { previewJson, sameOrigin } from "@/lib/preview/server";
 export async function GET(request?: Request) {
   if (request && !sameOrigin(request)) return previewJson({ message: "Use the Quiver website." }, 403);
@@ -7,7 +8,7 @@ export async function GET(request?: Request) {
     authenticated: false,
     shared: {
       ai: !!process.env.OPENROUTER_API_KEY,
-      stocks: !!process.env.TIINGO_API_KEY,
+      stocks: !!sharedTiingoKey(),
     },
   });
 }

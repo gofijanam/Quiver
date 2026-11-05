@@ -18,12 +18,16 @@ export async function proxyApi(request: Request, path: string[], base: string | 
   const url = new URL(path.map(encodeURIComponent).join("/"), api); url.search = input.search;
   const headers = new Headers();
   for (const name of ["accept", "authorization", "content-type", "idempotency-key", "last-event-id"]) { const v = request.headers.get(name); if (v) headers.set(name, v); }
+  // The engine verifies the external edge's signature, audience, route, expiry and nonce.
+  const externalEdge = process.env.QUIVER_EXTERNAL_EDGE_ATTESTATION === "1";
+  const proof = externalEdge ? request.headers.get("x-quiver-origin-proof") : null;
+  if (proof && proof.length <= 180) headers.set("x-quiver-origin-proof", proof);
   // Never forward other Site/ChatGPT cookies, visitor IP claims or internal operator credentials.
   const refresh = request.headers.get("cookie")?.split(";").map((s) => s.trim()).find((s) => s.startsWith("quiver_rt="));
   if (refresh && path[0] === "auth") headers.set("cookie", refresh);
   headers.set("origin", siteOrigin);
   try {
-    await attestEdge(headers,url,request.method,siteOrigin);
+    await attestEdge(headers,url,request.method,siteOrigin,externalEdge);
     const streaming = path.includes("stream");
     const timeout = path[0] === "compile" || path.includes("instruct") ? 60_000 : 25_000;
     const signal = streaming ? request.signal : AbortSignal.any([request.signal, AbortSignal.timeout(timeout)]);

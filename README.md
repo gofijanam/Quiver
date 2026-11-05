@@ -25,6 +25,30 @@ Run the engine with `QUIVR_MODE=testnet`, `CHAIN_ID=46630`,
 paper trading with observed mainnet prices. Mainnet authorization requires
 signed edge location proof, wallet authorization and venue checks.
 
+### Release operations
+
+- The hosted Paper release reports reference and simulated data separately.
+  Set `QUIVER_TIINGO_REDISTRIBUTION_LICENSED=true` on the engine and web
+  services only when the shared data license permits public redistribution.
+  Robinhood Paper can use a verified underlying reference when available.
+- The production uptime workflow checks public web readiness, PostgreSQL,
+  the Paper driver heartbeat, Privy and the expected execution gate.
+  The same check runs locally with `node ops/readiness.mjs`.
+- The private database backup job uses `ops/backup/Dockerfile`. Its
+  PostgreSQL connection and bucket credentials are Railway references.
+  The job restores each archive into a local disposable PostgreSQL instance
+  with execution held, then uploads it and verifies the stored checksum.
+- To put Railway behind an attesting domain, configure the Worker in
+  `ops/railway-edge.wrangler.jsonc` on the production domain. Set its
+  `QUIVER_PUBLIC_ORIGIN` and `QUIVER_RAILWAY_ORIGIN`, and install its
+  Ed25519 PKCS#8 signing key as a Worker secret. Install the corresponding
+  SPKI public key as `QUIVER_EDGE_PUBLIC_KEY` in the engine. Set
+  `QUIVER_EXTERNAL_EDGE_ATTESTATION=1` on the web and configure the exact
+  public origin in both Railway services and in Privy. Verify
+  `originVerified` through that domain and reject direct or forged requests
+  before enabling mainnet. Run `ops/check-railway-edge.ts` with the engine's
+  tsx loader to test the signature path locally.
+
 ## Local development
 
     npm install

@@ -1,3 +1,4 @@
+import { sharedTiingoKey } from "@/lib/preview/tiingo-license";
 import { z } from "zod";
 import { Workflow } from "@/services/backend/contracts/src/workflow";
 import { Risk } from "@/services/backend/contracts/src/strategy";
@@ -31,13 +32,14 @@ export async function POST(request: Request) {
   inflight++;
   row.n++;
   use.set(owner, row);
+  const tiingoKey = sharedTiingoKey();
   try {
     const v = input.data;
     return previewJson(
       await replayWorkflowHistory(v.workflow, v, v.risk, {
         registry: new Registry(MOCK_INSTRUMENTS),
-        tiingo: process.env.TIINGO_API_KEY
-          ? new TiingoHistory({ key: process.env.TIINGO_API_KEY })
+        tiingo: tiingoKey
+          ? new TiingoHistory({ key: tiingoKey })
           : undefined,
         ownerId: owner,
         signal: request.signal,

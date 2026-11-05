@@ -27,9 +27,17 @@ export class MockVenueAdapter implements VenueAdapter {
   readonly capabilities: VenueAdapter["capabilities"];
   note: string | null;
   down = false; // tests can simulate outages
-  constructor(readonly id: Venue, readonly name: string, private mkt: MarketData, private reg: Registry) {
+  constructor(readonly id: Venue, readonly name: string, private mkt: MarketData, private reg: Registry, mixedReferences = false) {
     this.capabilities = id === "polymarket" ? ["read"] : ["read", "paper"];
-    this.note = id === "polymarket" ? "Read-only: odds are signals, Quiver never trades Polymarket." : "Mock data (synthetic).";
+    this.note = id === "polymarket"
+      ? "Read-only: odds are signals, Quiver never trades Polymarket."
+      : mixedReferences
+        ? id === "robinhood"
+          ? "Verified underlying reference when available. Paper fills and fees are simulated."
+          : "Paper workflows use venue observations. Legacy simulations may use synthetic prices."
+      : mkt.synthetic
+        ? "Synthetic prices and simulated fills."
+        : "Reference prices when available. Paper fills, impact and fees are simulated.";
   }
   status() { return this.down ? "down" : "up"; }
   async quote(instrument: string, side: "buy" | "sell", notionalUsd: number, t: number): Promise<Quote> {
@@ -47,11 +55,11 @@ export class MockVenueAdapter implements VenueAdapter {
 }
 
 export type Adapters = Record<Venue, VenueAdapter>;
-export function mockAdapters(mkt: MarketData, reg: Registry): Adapters {
+export function mockAdapters(mkt: MarketData, reg: Registry, mixedReferences = false): Adapters {
   return {
-    robinhood: new MockVenueAdapter("robinhood", "Robinhood Chain", mkt, reg),
-    hyperliquid: new MockVenueAdapter("hyperliquid", "Hyperliquid", mkt, reg),
-    solana: new MockVenueAdapter("solana", "Solana (Jupiter)", mkt, reg),
+    robinhood: new MockVenueAdapter("robinhood", "Robinhood Chain", mkt, reg, mixedReferences),
+    hyperliquid: new MockVenueAdapter("hyperliquid", "Hyperliquid", mkt, reg, mixedReferences),
+    solana: new MockVenueAdapter("solana", "Solana (Jupiter)", mkt, reg, mixedReferences),
     polymarket: new MockVenueAdapter("polymarket", "Polymarket", mkt, reg),
   };
 }

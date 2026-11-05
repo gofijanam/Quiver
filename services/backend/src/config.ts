@@ -9,6 +9,12 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     const t = v.replace(/\s+#.*$/, "").trim();
     if (t !== "") cleaned[k] = t;
   }
+  // Production shares these feeds with application users. Require the
+  // operator to confirm redistribution rights before using the shared key.
+  if (cleaned.NODE_ENV?.toLowerCase() === "production" &&
+      cleaned.QUIVER_TIINGO_REDISTRIBUTION_LICENSED !== "true") {
+    delete cleaned.TIINGO_API_KEY;
+  }
   const r = Config.safeParse(cleaned);
   if (!r.success) {
     const lines = r.error.issues.map((i) => `  - ${i.path.join(".")}: ${i.message}`);

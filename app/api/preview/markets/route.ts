@@ -1,3 +1,4 @@
+import { sharedTiingoKey } from "@/lib/preview/tiingo-license";
 import { Market } from "@/lib/contracts/api";
 import type { MarketCandidate } from "@/lib/contracts/workflow";
 import { previewJson } from "@/lib/preview/server";
@@ -24,7 +25,7 @@ export async function GET() {
     const candidate: MarketCandidate = { id: m.id, name: m.name, symbol: m.symbol, venue: m.venue, kind: m.kind, source,
       address: m.venue === "solana" ? m.id.split(":")[2] : null, url: null, maxLeverage: null, outcome: null, endDate: null };
     const { quote } = await quoteAsset({ id: "catalog", query: m.symbol, sourceText: m.name, venue: m.venue, kind: m.kind, outcome: null,
-      resolution: { status: "matched", selectedId: m.id, candidates: [candidate], checkedAt: new Date(now).toISOString(), message: "" } }, get, process.env.TIINGO_API_KEY);
+      resolution: { status: "matched", selectedId: m.id, candidates: [candidate], checkedAt: new Date(now).toISOString(), message: "" } }, get, sharedTiingoKey());
     return Market.parse({ id: m.id, symbol: m.symbol, name: m.name, venue: m.venue, kind: m.kind, assetClass: m.assetClass, price: quote ? String(quote.price) : null,
       priceAt: quote ? new Date(quote.observedAt).toISOString() : null, priceSource: quote ? (equity ? "tiingo_underlying" : source) : "none",
       priceIsReal: !!quote, priceStale: !!quote && now - quote.observedAt > 120_000, change24hPct: null,

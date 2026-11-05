@@ -3,11 +3,7 @@ import {
   wrappedSol,
 } from "@/services/backend/src/venues/solana-price";
 import { marketJson } from "@/services/backend/src/compile/markets";
-import {
-  robinhoodIssuerCandidate,
-  ROBINHOOD_ISSUER_ASSETS,
-} from "@/services/backend/src/compile/robinhood-assets";
-import pins from "@/services/backend/config/verified/4663-readonly.json";
+import { robinhoodReference } from "@/services/backend/src/venues/stock-reference";
 import { hyperliquidBook } from "@/lib/live-market-data";
 import { previewJson } from "@/lib/preview/server";
 const positive = (v: unknown) => Number.isFinite(Number(v)) && Number(v) > 0;
@@ -80,67 +76,10 @@ export async function GET(request: Request) {
     if (venue === "robinhood") {
       if (!["NVDA", "AAPL", "TSLA", "SPY"].includes(symbol))
         return previewJson({ message: "Unknown equity." }, 422);
-      const m = robinhoodIssuerCandidate(
-        await marketJson(ROBINHOOD_ISSUER_ASSETS, undefined, 60000),
-        symbol,
+      const reference = await robinhoodReference(symbol, (url, init) =>
+        marketJson(url, init, 8000),
       );
-      if (!m) throw Error("unverified issuer");
-      const pin = pins.feeds.find(
-        (f) => f.symbol === symbol && f.chainId === 4663,
-      );
-      const base = {
-        venue,
-        symbol,
-        address: m.address,
-        source: "Robinhood issuer registry",
-        at: Date.now(),
-        price: null,
-      };
-      if (!pin) return previewJson(base);
-      const rpc = async (method: string, params: unknown[]) => {
-        const v = (await marketJson(
-          "https://rpc.mainnet.chain.robinhood.com",
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-          },
-          10000,
-        )) as { result?: string };
-        return v.result;
-      };
-      try {
-        const [chain, round] = await Promise.all([
-          rpc("eth_chainId", []),
-          rpc("eth_call", [{ to: pin.proxy, data: "0xfeaf968c" }, "latest"]),
-        ]);
-        if (
-          !chain ||
-          BigInt(chain) !== 4663n ||
-          !round ||
-          !/^0x[0-9a-fA-F]{320}$/.test(round)
-        )
-          return previewJson(base);
-        const word = (i: number) =>
-            BigInt("0x" + round.slice(2 + i * 64, 66 + i * 64)),
-          raw = BigInt.asIntN(256, word(1)),
-          at = Number(word(3)) * 1000;
-        if (
-          raw <= 0n ||
-          word(4) < word(0) ||
-          distance(at) > pin.heartbeatSec * 1000 ||
-          distance(at) < -3000
-        )
-          return previewJson(base);
-        return previewJson({
-          ...base,
-          price: Number(raw) / 10 ** pin.decimals,
-          at,
-          source: "Chainlink underlying reference · chain 4663",
-        });
-      } catch {
-        return previewJson(base);
-      }
+      return previewJson({ venue, symbol, ...reference });
     }
     return previewJson({ message: "Unknown venue." }, 422);
   } catch {

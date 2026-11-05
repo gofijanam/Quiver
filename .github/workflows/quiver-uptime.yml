@@ -1,0 +1,25 @@
+name: Quiver production uptime
+on:
+  push:
+    branches: [main]
+    paths:
+      - ops/readiness.mjs
+      - .github/workflows/quiver-uptime.yml
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  uptime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node ops/readiness.mjs
+        env:
+          QUIVER_MONITOR_ORIGIN: ${{ vars.QUIVER_MONITOR_ORIGIN }}
+          QUIVER_MONITOR_EXECUTION: ${{ vars.QUIVER_MONITOR_EXECUTION }}

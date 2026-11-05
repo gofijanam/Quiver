@@ -2,6 +2,7 @@ import { spotObservation } from "../venues/solana-price";
 import type { Workflow } from "../../contracts/src/workflow";
 import { marketJson, perpetualInfo } from "../compile/markets";
 import type { PaperQuote } from "./paper";
+import { robinhoodReference } from "../venues/stock-reference";
 
 type Asset = Workflow["assets"][number];
 type Get = (url: string, init?: RequestInit) => Promise<unknown>;
@@ -27,10 +28,14 @@ export async function quoteAsset(a: Asset, get: Get = getDefault, tiingoKey?: st
     } else if (c.venue === "polymarket") {
       if (!/^\d{1,100}$/.test(c.address ?? "") || !/^pm:outcome:\d+:[^:]+$/.test(c.id)) throw new Error("identity");
       const raw: any = await get(`https://clob.polymarket.com/midpoint?token_id=${c.address}`); price = Number(raw.mid); if (price > 1) throw new Error("invalid_odds"); source = "polymarket · outcome midpoint";
-    } else {
-      if (!tiingoKey || !/^[A-Z][A-Z0-9.-]{0,9}$/.test(c.symbol)) return { quote: null, message: "Stock quotes need configured Tiingo access." };
+    } else if (tiingoKey && /^[A-Z][A-Z0-9.-]{0,9}$/.test(c.symbol)) {
       const raw: any = await get(`https://api.tiingo.com/iex/${encodeURIComponent(c.symbol.toLowerCase())}`, { headers: { Authorization: `Token ${tiingoKey}`, Accept: "application/json" } });
       price = Number(raw?.[0]?.last ?? raw?.[0]?.tngoLast); observedAt = Date.parse(raw?.[0]?.lastSaleTimestamp ?? raw?.[0]?.timestamp); source = "tiingo · underlying stock (not a token execution quote)";
+    } else {
+      const reference = await robinhoodReference(c.symbol, get);
+      if (!c.address || c.address.toLowerCase() !== reference.address.toLowerCase() || reference.price === null)
+        return { quote: null, message: "No current verified underlying reference for this stock token." };
+      price = reference.price; observedAt = reference.at; source = reference.source;
     }
     if (!positive(price) || !Number.isFinite(observedAt)) throw new Error("invalid_quote");
     return { quote: { assetId: a.id, price, observedAt, source, synthetic: false, ...(Number.isFinite(fundingHourly) ? { fundingHourly } : {}) }, message: Date.now() - observedAt > 120_000 ? "Latest available quote is stale; new paper fills will wait." : "Read-only quote; fills use a modeled 0.1% fee and no order-book execution." };

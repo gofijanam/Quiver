@@ -20,15 +20,17 @@ export function withEdgeLocation<T>(
 const base64 = (bytes: ArrayBuffer) =>
   btoa(String.fromCharCode(...new Uint8Array(bytes)));
 
-/** Only worker/index.ts calls withEdgeLocation, using request.cf.country from the edge runtime. */
+/** Signs platform-provided location. Direct requests never enter this context. */
 export async function attestEdge(
   headers: Headers,
   url: URL,
   method: string,
   origin: string,
+  allowForwardedProof = false,
 ) {
-  headers.delete("x-quiver-origin-proof");
   const loc = location.getStore();
+  if (!loc && allowForwardedProof) return;
+  headers.delete("x-quiver-origin-proof");
   if (!loc) return;
   if (!imported || imported.encoded !== loc.privateDer) {
     const der = Uint8Array.from(atob(loc.privateDer), (c) => c.charCodeAt(0));

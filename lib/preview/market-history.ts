@@ -1,3 +1,4 @@
+import { sharedTiingoKey } from "@/lib/preview/tiingo-license";
 import { marketJson } from "@/services/backend/src/compile/markets";
 import { MOCK_INSTRUMENTS } from "@/services/backend/src/venues/registry";
 import { TiingoHistory, type Bar } from "@/services/backend/src/venues/tiingo";
@@ -253,10 +254,11 @@ export async function readMarketHistory(
     source = response.source;
     input = response.bars;
   } else if (market.assetClass === "equity" || market.assetClass === "etf") {
-    source = "Tiingo underlying equity";
-    dataSource = "tiingo";
-    if (process.env.TIINGO_API_KEY) {
-      stocks ??= new TiingoHistory({ key: process.env.TIINGO_API_KEY });
+    const key = sharedTiingoKey();
+    if (key) {
+      source = "Tiingo underlying equity";
+      dataSource = "tiingo";
+      stocks ??= new TiingoHistory({ key });
       input = (await stocks.bars(market.symbol, step, from, to)) ?? [];
     }
   }

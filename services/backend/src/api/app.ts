@@ -113,7 +113,7 @@ export function createApp(o: AppOptions) {
   const cfg = o.config; const clock = o.clock ?? systemClock;
   const registry = o.registry ?? new Registry(MOCK_INSTRUMENTS);
   const mkt = o.market ?? new MockMarket(registry);
-  const adapters = o.adapters ?? mockAdapters(mkt, registry);
+  const adapters = o.adapters ?? mockAdapters(mkt, registry, o.market != null && cfg.PRICE_SOURCE === "mainnet-readonly");
   const store = o.store ?? new MemStore();
   // M5.18: optional Tiingo history for stock/ETF instruments; null when the key is unset → current source ("fallback").
   const warmup = o.warmup ?? new Warmup(() => clock.now(), false);

@@ -3,6 +3,8 @@ WORKDIR /app
 RUN npm install --global pnpm@11.25.0
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 RUN pnpm install --frozen-lockfile --prod=false
+COPY services/backend/package.json services/backend/package-lock.json ./services/backend/
+RUN npm ci --prefix services/backend --no-audit --no-fund
 COPY . .
 ARG NEXT_PUBLIC_API_MODE=live
 ARG NEXT_PUBLIC_API_BASE=/v1

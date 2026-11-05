@@ -86,6 +86,7 @@ export function limitCopy(details: unknown): string {
   const d = rec(details), n = Number(d.limit);
   if (d.kind === "active_runs") return `You have ${Number.isFinite(n) ? n : 5} paper runs going. Stop one to start another.`;
   if (d.kind === "streams") return `You have ${Number.isFinite(n) ? n : 10} live views open. Close a tab to watch this one. Retrying shortly…`;
+  if (d.kind === "strategy_drafts") return "Your 24-hour strategy limit is reached. You can still edit existing drafts.";
   return ERROR_COPY.limit_exceeded;
 }
 /** M3.5: 422 backtest_range_invalid → guidance plus the bound to clamp to (null if the server gave none). */

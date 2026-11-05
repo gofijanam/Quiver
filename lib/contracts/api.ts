@@ -40,9 +40,16 @@ export const ListStrategiesQuery = PageQuery.extend({ status: z.enum(["draft", "
 export const ListStrategiesRes = Page(StrategySummary);
 export const CreateStrategyReq = z.object({ strategy: Strategy, compileId: CompileId.optional() });
 export const UpdateStrategyReq = z.object({ strategy: Strategy, expectedVersion: z.number().int() }); // optimistic concurrency -> 409 conflict
+const DraftTarget = z.union([z.strictObject({ strategyId: StrategyId }), z.strictObject({ compileId: CompileId })]);
+export const DraftAccess = z.object({
+  limit: z.number().int().positive().nullable(),
+  remaining: z.number().int().nonnegative().nullable(),
+  resetsAt: IsoTime.nullable(),
+});
 
 // ---------- Compile (NL -> strategy) ----------
 export const CompileReq = z.object({
+  draftTarget: DraftTarget.optional(),
   clarification: DraftContinuation.optional(),
   thesis: z.string().trim().min(1).max(2000),
   baseStrategy: Strategy.optional(), // present => refine
@@ -250,6 +257,7 @@ export const FillsQuery = PageQuery.extend({ runId: RunId.optional(), mode: RunM
 
 /** M5.6: compile from a chart screenshot (signed-in only). Response is the same NDJSON stream as /compile. */
 export const CompileImageReq = z.object({
+  draftTarget: DraftTarget.optional(),
   clarification: DraftContinuation.optional(),
   mimeType: z.enum(["image/png", "image/jpeg", "image/webp"]),
   imageBase64: z.string().min(16).max(3_000_000), // decoded must be ≤ 2 MB (413 payload_too_large past that); a data: URL prefix is accepted

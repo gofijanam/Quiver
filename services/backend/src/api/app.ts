@@ -1,4 +1,6 @@
 import { workspaceRewards, workspaceRevenue } from "../workflows/participation";
+import { draftLimit, draftUsage, recordDraft } from "../workflows/draft-access";
+import type { CompileEvent } from "../../contracts/src/events";
 import { MainnetHost } from "../execution/live-host";
 import { liveRoutes } from "../execution/live-routes";
 import { verifiedEdgeCountry } from "../execution/live-region";
@@ -422,6 +424,61 @@ export function createApp(o: AppOptions) {
   app.post("/auth/logout", (c) => { const rt = getCookie(c, "quiver_rt"); if (rt) store.refresh.delete(rt); deleteCookie(c, "quiver_rt", { path: "/v1/auth" }); return c.body(null, 204); });
 
   const NOTICE = exampleNotices(cfg.PRICE_SOURCE);
+  const draftAccessRequired = cfg.NODE_ENV?.toLowerCase() === "production" || cfg.STRATEGY_DRAFT_ACCESS;
+  const draftingUsers = new Set<string>();
+  const reserveDraft = async (user: User) => {
+    if (!draftAccessRequired) return;
+    const limit = await draftLimit(user, cfg);
+    const now = clock.now();
+    const usage = draftUsage(user, limit, now);
+    if (usage.resetsAt) throw new ApiErr("limit_exceeded", "Your 24-hour strategy limit is reached.", { kind: "strategy_drafts", ...usage }, Math.ceil((Date.parse(usage.resetsAt) - now) / 1000));
+    if (draftingUsers.has(user.id)) throw new ApiErr("conflict", "A new strategy is already being drafted. Wait for it to finish.");
+    draftingUsers.add(user.id);
+    return () => { draftingUsers.delete(user.id); };
+  };
+  const createDraft = async <T>(user: User, create: () => T) => {
+    const release = await reserveDraft(user);
+    try {
+      const result = create();
+      if (release) recordDraft(user, clock.now());
+      return result;
+    } finally { release?.(); }
+  };
+  const streamDraft = async (c: Context<Env>, gen: AsyncGenerator<CompileEvent>, user?: User,
+    target?: z.infer<typeof A.CompileReq>["draftTarget"], refundImageError = false) => {
+    let previousCompileId: string | undefined;
+    if (draftAccessRequired && user && target) {
+      if ("strategyId" in target) {
+        if (ownStrategy(c, target.strategyId).archived) throw new ApiErr("not_found", "Strategy not found.");
+      } else {
+        previousCompileId = target.compileId;
+        if (!user.draftCreations?.some((row) => row.compileId === previousCompileId)) throw new ApiErr("not_found", "This draft is no longer available to edit. Open the saved strategy or start a new draft.");
+      }
+    }
+    const release = user && !target ? await reserveDraft(user) : undefined;
+    c.header("content-type", "application/x-ndjson"); c.header("cache-control", "no-store");
+    return stream(c, async (s) => {
+      try {
+        for await (const event of gen) {
+          if (s.aborted || c.req.raw.signal.aborted) break;
+          if (event.type === "result" && user && release) {
+            const entry = recordDraft(user, clock.now(), event.compileId);
+            try {
+              if (o.durable) await o.durable.commit();
+              else persist?.touch();
+            } catch {
+              user.draftCreations = user.draftCreations?.filter((row) => row !== entry);
+              await s.write(JSON.stringify({ type: "error", code: "service_unavailable", message: "Couldn't save draft access. Please retry shortly." }) + "\n");
+              break;
+            }
+          }
+          if (event.type === "error" && refundImageError && user?.compiles.day === today() && user.compiles.n > 0) user.compiles.n--;
+          const output = event.type === "result" && previousCompileId ? { ...event, compileId: previousCompileId } : event;
+          await s.write(JSON.stringify(output) + "\n");
+        }
+      } finally { release?.(); }
+    });
+  };
   /** Per-user daily compile quota, shared by /compile and M4.9.1 /runs/:id/instruct (B2). */
   const chargeCompile = (u: User) => { if (u.compiles.day !== today()) u.compiles = { day: today(), n: 0 }; if (u.compiles.n >= cfg.LLM_USER_DAILY_COMPILES) throw new ApiErr("compile_quota_exceeded", "Daily compile limit reached.", undefined, Math.ceil((Date.parse(today() + "T00:00:00Z") + 86_400_000 - clock.now()) / 1000)); u.compiles.n++; charged.getStore()?.compile.push({ u, day: today() }); };
   // ---------- M5.9 user secrets vault ----------
@@ -430,11 +487,11 @@ export function createApp(o: AppOptions) {
   /** Plaintext AI key for this user's own compiles, or undefined. Never leaves the process except to OpenRouter. */
   const userAiKey = (u: User | undefined) => { if (!u) return undefined; const x = [...store.userSecrets.values()].find((s) => s.ownerId === u.id && s.kind === "ai_key");
     const k = x ? vault.open(x.sealed, aadOf(x)) ?? undefined : undefined; if (x && k) x.lastUsedAt = clock.now(); return k; };
-  // ---------- compile (guest allowed) ----------
-  app.post("/compile", async (c) => {
+  // Standalone development previews retain their guest compiler.
+  app.post("/compile", (c, next) => draftAccessRequired ? auth(c, next) : next(), async (c) => {
     const b = await body(c, A.CompileReq);
     const h = c.req.header("authorization"); const p = h?.startsWith("Bearer ") ? verifyJwt<{ sub: string }>(h.slice(7), secret, clock.now()) : null;
-    const u = p ? store.users.get(p.sub) : undefined;
+    const u = draftAccessRequired ? c.get("user") : p ? store.users.get(p.sub) : undefined;
     const ip = clientIp(c);
     if (u) { limit(`c:${u.id}`, 6, 60_000); chargeCompile(u); }
     else limit(`g:${ip}:${today()}`, 3, 86_400_000);
@@ -442,8 +499,7 @@ export function createApp(o: AppOptions) {
     const compiler=c.req.query("workflow")==="1" || b.clarification || !key ? planCompile : compile;
     const gen = compiler(b, { registry, stockTokensAllowed: true, retainWorkflow: c.req.query("workflow")==="1", delayMs: o.compileDelayMs ?? 0,
       openrouter: key ? { apiKey: key, model: cfg.LLM_MODEL ?? "openai/gpt-4.1-mini", budget: llmBudget } : undefined });
-    c.header("content-type", "application/x-ndjson"); c.header("cache-control", "no-store");
-    return stream(c, async (s) => { for await (const ev of gen) await s.write(JSON.stringify(ev) + "\n"); });
+    return streamDraft(c, gen, u, b.draftTarget);
   });
 
   // ---------- authed ----------
@@ -502,6 +558,13 @@ export function createApp(o: AppOptions) {
     return c.json({ops:p.data.ops});
   });
   r.get("/me", (c) => c.json(meView(c.get("user"))));
+  r.get("/draft-access", async (c) => {
+    const user = c.get("user");
+    limit(`draft-access:${user.id}`, 30, 60_000);
+    const quota = draftAccessRequired ? draftUsage(user, await draftLimit(user, cfg), clock.now()) : { limit: null, remaining: null, resetsAt: null };
+    c.header("cache-control", "private, no-store");
+    return c.json(quota);
+  });
   r.post("/me/eligibility", async (c) => {
     const b = await body(c, A.EligibilityDeclareReq); const u = c.get("user");
     if (b.acceptedTermsVersion !== cfg.TERMS_VERSION) throw new ApiErr("validation_failed", `Accept the current terms (${cfg.TERMS_VERSION}).`);
@@ -533,9 +596,7 @@ export function createApp(o: AppOptions) {
     const note = b.note?.replace(/\p{Cc}/gu, " ").trim() || undefined;
     const gen = planCompile({ clarification: b.clarification, thesis: note ?? "Strategy from a chart screenshot", note, image: { mime: chk.mime, base64: b.imageBase64.replace(/^data:[^;,]+;base64,/, "") } }, { registry, stockTokensAllowed: true, retainWorkflow: c.req.query("workflow")==="1", delayMs: o.compileDelayMs ?? 0,
       openrouter: { apiKey: key, model: cfg.LLM_VISION_MODEL ?? cfg.LLM_MODEL ?? "openai/gpt-4.1-mini", budget: llmBudget } });
-    c.header("content-type", "application/x-ndjson"); c.header("cache-control", "no-store");
-    return stream(c, async (s) => { let failed = false; for await (const ev of gen) { if (ev.type === "error") failed = true; await s.write(JSON.stringify(ev) + "\n"); }
-      if (failed && u.compiles.day === today() && u.compiles.n > 0) u.compiles.n--; }); // failed reads don't count against the quota
+    return streamDraft(c, gen, u, b.draftTarget, true);
   });
   r.post("/strategies/validate", async (c) => {
     const b = await body(c, A.ValidateReq); const v0 = validateStrategy(b.strategy, { registry, stockTokensAllowed: true }); const v = { ...v0, issues: [...v0.issues, ...geoNote(c.get("user"), v0.strategy)] };
@@ -553,9 +614,22 @@ export function createApp(o: AppOptions) {
     return c.json({ items: p.items.map((s: any) => ({ id: s.id, name: s.name, version: s.version, status: s.status, venues: s.venues, updatedAt: s.updatedAt, activeRunId: s.activeRunId })), nextCursor: p.nextCursor });
   });
   r.post("/strategies", (c) => idem(c, async () => {
-    const b = await body(c, A.CreateStrategyReq); const v = saveVersion(c, b.strategy);
-    const row: StrategyRow = { id: newId("stg", clock.now()), ownerId: c.get("user").id, archived: false, versions: [{ version: 1, ...v }], createdAt: clock.now(), updatedAt: clock.now(), compileId: b.compileId };
-    store.strategies.set(row.id, row); return [strategyRecord(row), 201];
+    const user = c.get("user");
+    const b = await body(c, A.CreateStrategyReq);
+    const receipt = draftAccessRequired && b.compileId ? user.draftCreations?.find((entry) => entry.compileId === b.compileId) : undefined;
+    if (draftAccessRequired && b.compileId && !receipt) {
+      const saved = [...store.strategies.values()].find((row) => row.ownerId === user.id && row.compileId === b.compileId);
+      if (saved && !saved.archived) return [strategyRecord(saved), 200];
+      throw new ApiErr("not_found", "This draft is no longer available to save.");
+    }
+    const v = saveVersion(c, b.strategy);
+    const save = (): [ReturnType<typeof strategyRecord>, number] => {
+      const row: StrategyRow = { id: newId("stg", clock.now()), ownerId: user.id, archived: false, versions: [{ version: 1, ...v }], createdAt: clock.now(), updatedAt: clock.now(), compileId: b.compileId };
+      store.strategies.set(row.id, row);
+      if (receipt) delete receipt.compileId;
+      return [strategyRecord(row), 201];
+    };
+    return receipt ? save() : createDraft(user, save);
   }));
   r.get("/strategies/:id", (c) => c.json(strategyRecord(ownStrategy(c, c.req.param("id")))));
   r.get("/strategies/:id/versions/:v", (c) => {
@@ -1301,14 +1375,14 @@ export function createApp(o: AppOptions) {
     c.header("cache-control", u ? "private, no-store" : "public, max-age=30"); c.header("x-robots-tag", "noindex");
     return c.json({ ...(await summaryOf(p, u)), thesis: p.strategy.thesis ?? "", strategy: p.strategy, humanized: p.humanized, nodes: strategyNodes(p.strategy, registry, p.humanized), forkedFrom: p.forkedFrom });
   });
-  r.post("/public/strategies/:id/fork", (c) => idem(c, async () => {
+  r.post("/public/strategies/:id/fork", (c) => idem(c, () => createDraft(c.get("user"), () => {
     const p = findPub(c.req.param("id")); const v = saveVersion(c, p.strategy);
     const row: StrategyRow = { id: newId("stg", clock.now()), ownerId: c.get("user").id, archived: false, versions: [{ version: 1, ...v }], createdAt: clock.now(), updatedAt: clock.now(), forkedFrom: p.id, public: false, forks: 0 };
     store.strategies.set(row.id, row);
     if (p.row) p.row.forks = (p.row.forks ?? 0) + 1; else seedForks.set(p.id, (seedForks.get(p.id) ?? 0) + 1);
     store.audit.push({ at: clock.now(), userId: row.ownerId, action: `strategy.fork:${p.id}` });
     return [strategyRecord(row), 201];
-  }));
+  })));
   r.post("/strategies/:id/publish", async (c) => {
     const s = ownStrategy(c, c.req.param("id")); const b = await body(c, X.PublishReq);
     if (b.public && hasErrors(s.versions.at(-1)!.issues)) throw new ApiErr("strategy_invalid", "Fix the strategy's errors before publishing.");
@@ -1453,17 +1527,19 @@ export function createApp(o: AppOptions) {
     const p = findPub(b.data.publicStrategyId);
     if (p.ownerId === u.id || lineageOwners(p).has(u.id)) throw new ApiErr("validation_failed", "That's your own strategy (or a copy of it); run yours directly.");
     if (!u.following?.includes(p.handle)) throw new ApiErr("forbidden", `Follow ${p.handle} first to copy their strategies.`, { handle: p.handle });
-    if ([...store.strategies.values()].some((x) => x.ownerId === u.id && !x.archived && x.copyOf?.publicStrategyId === p.id)) throw new ApiErr("conflict", "You already copy this strategy. Sync it instead.");
-    const source=p.strategy.workflow?{...p.strategy,workflow:{...p.strategy.workflow,budgetUsd:Number(b.data.startingEquityUsd)}}:p.strategy;
-    if(store.executionAccounts.get(u.id)?.paused)throw new HostError(409,"Resume this account first.");
-    const v = saveVersion(c, source); const t = clock.now();
-    const row: StrategyRow = { id: newId("stg", t), ownerId: u.id, archived: false, versions: [{ version: 1, ...v }], createdAt: t, updatedAt: t, forkedFrom: p.id, public: false, forks: 0,
-      copyOf: { publicStrategyId: p.id, handle: p.handle, sourceVersion: pubVersion(p), copiedAt: t, syncedAt: t } };
-    store.strategies.set(row.id, row);
-    try { if(v.strategy.workflow)workflows.start(u.id,"copy:"+row.id,row.id,1,v.strategy,b.data.approvalMode);else startRunFor(u, A.StartRunReq.parse({ strategyId: row.id, mode: "paper", approvalMode: b.data.approvalMode, paper: { startingEquityUsd: b.data.startingEquityUsd } })); }
-    catch (e) { store.strategies.delete(row.id); throw e; }
-    store.audit.push({ at: t, userId: u.id, action: "copy.start", target: `${p.id}->${row.id}` });
-    return [copyView(row), 201];
+    return createDraft(u, (): [unknown, number] => {
+      if ([...store.strategies.values()].some((x) => x.ownerId === u.id && !x.archived && x.copyOf?.publicStrategyId === p.id)) throw new ApiErr("conflict", "You already copy this strategy. Sync it instead.");
+      const source=p.strategy.workflow?{...p.strategy,workflow:{...p.strategy.workflow,budgetUsd:Number(b.data.startingEquityUsd)}}:p.strategy;
+      if(store.executionAccounts.get(u.id)?.paused)throw new HostError(409,"Resume this account first.");
+      const v = saveVersion(c, source); const t = clock.now();
+      const row: StrategyRow = { id: newId("stg", t), ownerId: u.id, archived: false, versions: [{ version: 1, ...v }], createdAt: t, updatedAt: t, forkedFrom: p.id, public: false, forks: 0,
+        copyOf: { publicStrategyId: p.id, handle: p.handle, sourceVersion: pubVersion(p), copiedAt: t, syncedAt: t } };
+      store.strategies.set(row.id, row);
+      try { if(v.strategy.workflow)workflows.start(u.id,"copy:"+row.id,row.id,1,v.strategy,b.data.approvalMode);else startRunFor(u, A.StartRunReq.parse({ strategyId: row.id, mode: "paper", approvalMode: b.data.approvalMode, paper: { startingEquityUsd: b.data.startingEquityUsd } })); }
+      catch (e) { store.strategies.delete(row.id); throw e; }
+      store.audit.push({ at: t, userId: u.id, action: "copy.start", target: `${p.id}->${row.id}` });
+      return [copyView(row), 201];
+    });
   }));
   r.get("/copy", (c) => { const uid = c.get("user").id;
     return c.json({ items: [...store.strategies.values()].filter((s) => s.ownerId === uid && s.copyOf && !s.archived).sort((a, b) => b.createdAt - a.createdAt).map(copyView), notice: COPY_NOTICE } satisfies z.infer<typeof SO.CopyListRes>); });

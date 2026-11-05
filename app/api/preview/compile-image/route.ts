@@ -1,9 +1,10 @@
 import { CompileImageReq } from "@/lib/contracts";
 import { streamPreviewCompile } from "@/lib/preview/compile";
-import { previewAi, previewJson, previewPublicAiEnabled, readPreviewBody, sameOrigin } from "@/lib/preview/server";
+import { previewAi, previewJson, previewPublicAiEnabled, readPreviewBody, sameOrigin, workspaceUsesEngine } from "@/lib/preview/server";
 import { checkImage } from "@/services/backend/src/compile/image";
 
 export async function POST(request: Request) {
+  if (workspaceUsesEngine()) return previewJson({ message: "Sign in to draft a strategy in this workspace." }, 401);
   if (!sameOrigin(request)) return previewJson({ message: "Attach charts from Quiver." }, 403);
   if (!previewPublicAiEnabled()) return previewJson({ message: "Chart analysis is unavailable in this workspace." }, 503);
   let raw: unknown;

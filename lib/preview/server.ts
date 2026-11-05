@@ -25,6 +25,7 @@ export async function readPreviewBody(request: Request, max: number): Promise<un
 export function previewAiEnabled() {
   return process.env.QUIVER_PREVIEW_AI_ENABLED === "true" && !!process.env.OPENROUTER_API_KEY;
 }
+export const workspaceUsesEngine = () => !!process.env.QUIVER_API_INTERNAL || process.env.NEXT_PUBLIC_API_MODE === "live";
 export const previewPublicAiEnabled = () => previewAiEnabled() && process.env.QUIVER_PREVIEW_PUBLIC_AI === "true";
 // Explicit test setting: disable daily spend/call quotas without dropping
 // accounting, concurrent-request bounds or per-call limits.

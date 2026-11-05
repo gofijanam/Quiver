@@ -16,6 +16,9 @@ export const RawConfig = z.object({
   PRIVY_JWKS_MIN_INTERVAL_MS: z.coerce.number().int().positive().default(30_000).transform((v) => Math.max(v, 10_000)), // M5.25: JWKS refetch cooldown, floor 10 s
   INVALID_PER_USER_PER_MIN: z.coerce.number().int().min(0).max(10_000).default(60), // M5.25: per-user cap on invalid (422/413) requests; 0 = off
   QUIVR_TOKEN_ADDRESS: EvmAddress.optional(),
+  STRATEGY_DRAFT_ACCESS: bool.default(false),
+  QUIVER_DRAFT_TOKEN_MINT: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/).optional(),
+  QUIVER_DRAFT_HOLDER_LIMIT: z.coerce.number().pipe(z.union([z.literal(5), z.literal(10)])).default(5),
   AA_PROVIDER: z.literal("alchemy").default("alchemy"),
   ALCHEMY_API_KEY: opt,
   ALCHEMY_GAS_POLICY_ID: opt,

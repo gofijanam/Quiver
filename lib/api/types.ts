@@ -44,7 +44,7 @@ export interface QuiverApi extends QuiverApiExt, QuiverMarketApi, QuiverAuthApi,
   runs(q?: { strategyId?: string }): Promise<Page<Run>>;
   run(id: string): Promise<Run>;
   /** POST /v1/strategies {strategy} (idempotent). */
-  createStrategy(strategy: C.Strategy): Promise<StrategyRecord>;
+  createStrategy(strategy: C.Strategy, compileId?: string): Promise<StrategyRecord>;
   updateStrategy(id: string, strategy: C.Strategy, expectedVersion: number): Promise<StrategyRecord>;
   startRun(req: StartRunReq): Promise<Run>;
   control(id: string, action: RunControl): Promise<Run>;

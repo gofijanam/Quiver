@@ -20,7 +20,7 @@ export function warmWorkspaceModule(path: string) {
           : null;
   if (load) void load().catch(() => {});
 }
-type Destination = { url: URL; from: string };
+type Destination = { url: URL; from: string; navigation: number };
 // Only mounted after an in-app navigation, inside Suspense. Direct loads retain server rendering.
 function WatchCommit({
   destination,
@@ -50,11 +50,12 @@ export default function WorkspaceOutlet({
 }) {
   const path = usePathname();
   const [destination, setDestination] = useState<Destination | null>(null);
+  const navigation = useRef(0);
   useEffect(() => {
     const follow = (event: Event) => {
       const url = new URL((event as CustomEvent<string>).detail, location.href);
       setDestination(
-        quickPage(url.pathname) ? { url, from: location.pathname } : null,
+        quickPage(url.pathname) ? { url, from: location.pathname, navigation: ++navigation.current } : null,
       );
     };
     const back = () => setDestination(null);
@@ -105,7 +106,7 @@ export default function WorkspaceOutlet({
       <WatchCommit destination={destination} reset={setDestination} />
       {url.pathname === "/app/new" ? (
         <Editor
-          key={url.search}
+          key={destination.navigation}
           strategyId={params.get("strategy") ?? ""}
           initialPrompt={params.get("idea") ?? params.get("q") ?? ""}
         />

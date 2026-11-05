@@ -1,5 +1,5 @@
 "use client";
-import AccountMenu from "@/components/auth/AccountMenu";
+import Image from "next/image";
 import Link from "@/components/Link";
 import { usePathname,useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -41,6 +41,21 @@ function Item({ n, href, d, path, tall }: { n: string; href: string; d: string; 
       <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden className={on ? "text-accent" : ""}><path d={d} /></svg>
       {n}
     </Link>
+  );
+}
+function SidebarSocial() {
+  const icon = "grid h-11 w-11 place-items-center rounded-[8px] text-muted/75";
+  return (
+    <div aria-label="Quiver links" role="group" className="q-sidebar-foot mt-auto flex gap-1 border-t border-line">
+      <button type="button" disabled className={icon} aria-label="X (Twitter), link coming soon" title="X link coming soon">
+        <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z" />
+        </svg>
+      </button>
+      <button type="button" disabled className={icon} aria-label="Dex Screener, link coming soon" title="Dex Screener link coming soon">
+        <Image src="/brands/dex-screener.png" width={20} height={20} alt="" className="opacity-60" unoptimized />
+      </button>
+    </div>
   );
 }
 export default function AppShell({ children }: { active?: string; children: React.ReactNode }) {
@@ -91,9 +106,7 @@ export default function AppShell({ children }: { active?: string; children: Reac
         <nav aria-label="App" className="mt-5 flex flex-col gap-0.5">{NAV.map(([n, h, d]) => <Item key={n} n={n} href={h} d={d} path={path} />)}</nav>
         <div className="mt-6 px-2.5 font-mono text-[12px] uppercase tracking-[.16em] text-muted">Account</div>
         <nav aria-label="Account" className="mt-2 flex flex-col gap-0.5">{ACCOUNT.map(([n, h, d]) => <Item key={n} n={n} href={h} d={d} path={path} />)}</nav>
-        <div className="q-sidebar-foot mt-auto space-y-3 border-t border-line pt-4">
-          <AccountMenu />
-        </div>
+        <SidebarSocial />
       </aside>
       <div className="min-w-0 flex-1">
         <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-line bg-bg/85 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-md lg:hidden" style={{ boxSizing: "content-box" }}>
@@ -113,9 +126,7 @@ export default function AppShell({ children }: { active?: string; children: Reac
               <nav aria-label="App" className="mt-4 flex flex-col gap-0.5" onClick={() => setOpen(false)}>{NAV.map(([n, h, d]) => <Item key={n} n={n} href={h} d={d} path={path} tall />)}</nav>
               <div className="mt-5 px-2.5 font-mono text-[12px] uppercase tracking-[.16em] text-muted">Account</div>
               <nav aria-label="Account" className="mt-2 flex flex-col gap-0.5" onClick={() => setOpen(false)}>{ACCOUNT.map(([n, h, d]) => <Item key={n} n={n} href={h} d={d} path={path} tall />)}</nav>
-              <div className="q-sidebar-foot mt-auto space-y-3 border-t border-line pt-4">
-                <AccountMenu tall />
-              </div>
+              <SidebarSocial />
             </div>
           </div>
         )}

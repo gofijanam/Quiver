@@ -1,8 +1,9 @@
 import { CompileReq } from "@/lib/contracts";
 import { streamPreviewCompile } from "@/lib/preview/compile";
-import { previewAi, previewJson, readPreviewBody, sameOrigin } from "@/lib/preview/server";
+import { previewAi, previewJson, readPreviewBody, sameOrigin, workspaceUsesEngine } from "@/lib/preview/server";
 
 export async function POST(request: Request) {
+  if (workspaceUsesEngine()) return previewJson({ message: "Sign in to draft a strategy in this workspace." }, 401);
   if (!sameOrigin(request)) return previewJson({ message: "Draft from the Quiver website." }, 403);
   let raw: unknown;
   try { raw = await readPreviewBody(request, 96_000); }

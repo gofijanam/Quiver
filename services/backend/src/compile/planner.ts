@@ -19,6 +19,7 @@ import { drawdownDraft } from "./drawdown";
 import { linkedEntry } from "./linked-entry";
 import { oddsEntry } from "./odds-entry";
 import { recurringDraft } from "./recurring";
+import { oneOffPaperDraft } from "./one-off-paper";
 
 // Both model passes must use the same venue vocabulary as the execution schema.
 const venueVocabulary = 'Venue IDs are canonical: "robinhood" denotes Robinhood Chain stock tokens, "hyperliquid" denotes Hyperliquid, "polymarket" denotes Polymarket, and "solana" denotes the Solana token market (including Jupiter routes). These IDs are not venue changes. Distinguish a conventional brokerage or exchange when the request explicitly names one.';
@@ -183,7 +184,7 @@ export async function* planCompile(req: Parameters<typeof compile>[0], d: Compil
     if (!d.openrouter) { yield { type: "error", code: "ai_required", message: "Sign in for this refinement. Your current strategy has not been changed." }; return; }
   }
   if (!continued && !req.baseStrategy && isEditRequest(req.thesis)) { yield { type: "error", code: "needs_strategy", message: "Open the strategy you want to edit, then use Refine this draft. No unrelated strategy was created." }; return; }
-  const template = !req.baseStrategy && !req.image ? basketDraft(req.thesis) ?? drawdownDraft(req.thesis) ?? recurringDraft(req.thesis) ?? oddsEntry(req.thesis) ?? (d.retainWorkflow ? linkedEntry(req.thesis) : null) : null;
+  const template = !req.baseStrategy && !req.image ? basketDraft(req.thesis) ?? drawdownDraft(req.thesis) ?? recurringDraft(req.thesis) ?? oddsEntry(req.thesis) ?? (d.retainWorkflow ? oneOffPaperDraft(req.thesis) ?? linkedEntry(req.thesis) : null) : null;
   const recurring = !continued ? template : template && req.clarification && matchesExactDraft(template, req.clarification, req.thesis)
     ? continued.draft.workflow : null;
   if (recurring) {

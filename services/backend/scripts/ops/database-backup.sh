@@ -37,7 +37,8 @@ case "$operation" in
     staging="$(mktemp)"
     trap 'rm -f -- "$staging"' EXIT
     pg_restore --no-owner --no-privileges --file="$staging" "$archive"
-    printf '\n%s\n' "UPDATE quiver_state SET payload=jsonb_set(payload,'{restoreHold}','true'::jsonb) WHERE id='paper-beta';" >> "$staging"
+    # pg_restore deliberately clears search_path in its output.
+    printf '\n%s\n' "UPDATE public.quiver_state SET payload=jsonb_set(payload,'{restoreHold}','true'::jsonb) WHERE id='paper-beta';" >> "$staging"
     psql -Xq --single-transaction -v ON_ERROR_STOP=1 --file="$staging" >/dev/null
     echo 'Restored into the recovery database. Signers and sessions will be held on first boot.'
     ;;

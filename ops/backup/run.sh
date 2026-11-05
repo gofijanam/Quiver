@@ -40,7 +40,7 @@ pg_ctl -D "$work/pg" -m fast -w stop >/dev/null
 export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-auto}" AWS_PAGER=""
 export AWS_CONFIG_FILE="$work/aws-config"
 export AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED AWS_RESPONSE_CHECKSUM_VALIDATION=WHEN_REQUIRED
-aws configure set default.s3.addressing_style path
+aws configure set default.s3.addressing_style virtual
 key="postgres/$(date -u +%Y%m%dT%H%M%SZ)-$(basename "$work").dump"
 object="s3://$BACKUP_S3_BUCKET/$key"
 s3=(aws --endpoint-url "$BACKUP_S3_ENDPOINT" s3)

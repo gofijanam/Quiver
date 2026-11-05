@@ -1,6 +1,6 @@
 import { read58 } from "../execution/solana-wire";
 /**
- * M5.2: server-side Privy identity-token verification (ES256 JWT). No SDK, node:crypto only.
+ * Server-side Privy identity and access token verification (ES256 JWT).
  * Fails closed: no app id/secret → PrivyUnavailable; any check failing → PrivyInvalid.
  * Checks: alg ES256, kid known (JWKS) or the configured PEM, signature, iss "privy.io", aud = app id, exp/nbf/iat (60 s skew), sub "did:privy:".
  */
@@ -11,7 +11,9 @@ export class PrivyUnavailable extends Error {}
 export class PrivyInvalid extends Error {}
 export interface PrivyIdentity { sub: string; wallets: string[]; solanaWallets?: string[]; email: string | null }
 export type JwksFetch = (url: string) => Promise<{ keys: (JsonWebKey & { kid?: string })[] }>;
-export interface PrivyOpts { appId?: string; appSecret?: string; verificationKeyPem?: string; jwksUrl?: string; fetchJwks?: JwksFetch; now?: () => number; /** M5.24c: min ms between JWKS fetches (default 30 s). */ jwksMinIntervalMs?: number }
+type LinkedAccount = { type?: string; address?: string; chain_type?: string };
+type PrivyUser = { id?: unknown; linked_accounts?: unknown };
+export interface PrivyOpts { appId?: string; appSecret?: string; verificationKeyPem?: string; jwksUrl?: string; fetchJwks?: JwksFetch; fetchUser?: (sub: string) => Promise<PrivyUser | null>; now?: () => number; /** M5.24c: min ms between JWKS fetches (default 30 s). */ jwksMinIntervalMs?: number }
 
 const b64 = (s: string) => Buffer.from(s, "base64url");
 const SKEW = 60;
@@ -54,6 +56,25 @@ export class PrivyVerifier {
     return k;
   }
 
+  private async linkedAccounts(sub: string, claims: Record<string, unknown>): Promise<LinkedAccount[]> {
+    let accounts: unknown = claims.linked_accounts;
+    if (accounts === undefined && typeof claims.sid === "string" && claims.sid.length > 0) {
+      // Access tokens identify the session. Read the current links using the app's server credentials.
+      let user: PrivyUser | null;
+      try {
+        user = await (this.o.fetchUser?.(sub) ?? fetchPrivyUser(sub, this.o.appId!, this.o.appSecret!));
+      } catch {
+        throw new PrivyUnavailable("Privy user lookup unavailable");
+      }
+      if (user?.id !== sub) throw new PrivyInvalid("Privy user does not match the token");
+      accounts = user.linked_accounts;
+      if (!Array.isArray(accounts)) throw new PrivyUnavailable("Privy user links unavailable");
+    } else if (typeof accounts === "string") {
+      try { accounts = JSON.parse(accounts); } catch { return []; }
+    }
+    return Array.isArray(accounts) ? accounts.filter((account) => account && typeof account === "object") : [];
+  }
+
   async verify(token: string): Promise<PrivyIdentity> {
     if (!this.configured) throw new PrivyUnavailable("Privy is not configured");
     const parts = token.split("."); if (parts.length !== 3) throw new PrivyInvalid("malformed token");
@@ -70,14 +91,23 @@ export class PrivyVerifier {
     if (typeof p.nbf === "number" && p.nbf - SKEW > t) throw new PrivyInvalid("not yet valid");
     if (typeof p.iat === "number" && p.iat - SKEW > t) throw new PrivyInvalid("issued in the future");
     if (typeof p.sub !== "string" || !/^did:privy:[A-Za-z0-9_-]{6,64}$/.test(p.sub)) throw new PrivyInvalid("bad subject");
-    // identity tokens carry linked_accounts as a JSON string
-    let la: { type?: string; address?: string; chain_type?: string }[] = [];
-    try { la = typeof p.linked_accounts === "string" ? JSON.parse(p.linked_accounts) : Array.isArray(p.linked_accounts) ? (p.linked_accounts as typeof la) : []; } catch { la = []; }
+    const la = await this.linkedAccounts(p.sub, p);
     const wallets = la.filter((a) => a.type === "wallet" && (a.chain_type ?? "ethereum") === "ethereum" && /^0x[0-9a-fA-F]{40}$/.test(a.address ?? "")).map((a) => a.address!);
     const email = (la.find((a) => a.type === "email") as { address?: string } | undefined)?.address ?? null;
     const solanaWallets=la.filter(a=>a.type==="wallet"&&a.chain_type==="solana"&&typeof a.address==="string").flatMap(a=>{try{read58(a.address!,32);return [a.address!];}catch{return [];}});
     return { sub:p.sub,wallets,email,...(solanaWallets.length?{solanaWallets}: {}) };
   }
+}
+
+async function fetchPrivyUser(sub: string, appId: string, appSecret: string): Promise<PrivyUser | null> {
+  const r = await fetch(`https://api.privy.io/v1/users/${encodeURIComponent(sub)}`, {
+    headers: { "privy-app-id": appId, authorization: `Basic ${Buffer.from(`${appId}:${appSecret}`).toString("base64")}` },
+    signal: AbortSignal.timeout(4500),
+    redirect: "error",
+  });
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error(`Privy user lookup returned ${r.status}`);
+  return await r.json() as PrivyUser;
 }
 
 const defaultFetch: JwksFetch = async (url) => {

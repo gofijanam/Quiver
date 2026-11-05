@@ -41,6 +41,31 @@ describe("M5.2 Privy sign-in", () => {
     expect(LinkedWalletsRes.parse((await s.req("GET", "/me/wallets", undefined, a.j.accessToken)).j).items).toEqual([{ address: "0x1111111111111111111111111111111111111111", linkedAt: new Date(NOW).toISOString(), primary: true }]);
     expect(AuthConfigRes.parse((await s.req("GET", "/auth/config")).j).privy).toEqual({ enabled: true, appId: APP });
   });
+  it("accepts an access token and links only wallets Privy returns for its verified subject", async () => {
+    const sub = "did:privy:abc123def456";
+    const address = "0x2222222222222222222222222222222222222222";
+    let lookup = "";
+    const s = setup({}, new PrivyVerifier({
+      appId: APP,
+      appSecret: "placeholder-secret",
+      now: () => NOW,
+      fetchJwks: async () => ({ keys: [jwk] }),
+      fetchUser: async (id) => {
+        lookup = id;
+        return { id: sub, linked_accounts: [{ type: "wallet", address, chain_type: "ethereum" }] };
+      },
+    }));
+    const claims = { sid: "session-test", linked_accounts: undefined };
+    const denied = await s.req("POST", "/auth/exchange", { provider: "privy", idToken: mint({ ...claims, aud: "other-app" }) });
+    expect(denied.status).toBe(401);
+    expect(lookup).toBe("");
+    const accepted = await s.req("POST", "/auth/exchange", { provider: "privy", idToken: mint(claims) });
+    expect(accepted.status).toBe(200);
+    expect(lookup).toBe(sub);
+    expect(accepted.j.me.wallets[0].address).toBe(address);
+    const wrongSubject = await s.req("POST", "/auth/exchange", { provider: "privy", idToken: mint({ ...claims, sub: "did:privy:different-user" }) });
+    expect(wrongSubject.status).toBe(401);
+  });
   it.each([
     ["wrong key", () => mint({}, { key: other.privateKey })], ["alg none", () => mint({}, { alg: "none" })], ["HS256", () => mint({}, { alg: "HS256" })],
     ["unknown kid", () => mint({}, { kid: "k9" })], ["wrong aud", () => mint({ aud: "other-app" })], ["wrong iss", () => mint({ iss: "evil.io" })],

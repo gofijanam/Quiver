@@ -51,13 +51,15 @@ function Bridge({
     timer.current = null;
     for (const w of pending.current.splice(0)) w.reject(e);
   };
+  const getLoginToken = async () =>
+    (await getIdentityToken()) ?? (await privy.getAccessToken());
   const exchange = async () => {
     if (!pending.current.length || working.current) return;
     working.current = true;
     try {
-      const idToken = await getIdentityToken();
-      if (!idToken) return;
-      await signInWithPrivy(idToken);
+      const token = await getLoginToken();
+      if (!token) return;
+      await signInWithPrivy(token);
       if (timer.current) clearTimeout(timer.current);
       timer.current = null;
       for (const w of pending.current.splice(0)) w.resolve();
@@ -89,7 +91,7 @@ function Bridge({
     if (!l?.address || linkSyncing.current) return;
     linkSyncing.current = true;
     try {
-      const token = await getIdentityToken();
+      const token = await getLoginToken();
       if (!token) return;
       // Inspect only to wait for the new signed claim; the backend verifies the complete token and linked account.
       const p = JSON.parse(
@@ -105,17 +107,16 @@ function Bridge({
         finishLink(Error("The signed-in account changed during linking."));
         return;
       }
-      if (
-        !Array.isArray(claims) ||
-        !claims.some(
-          (a: Record<string, unknown>) =>
-            a.type === "wallet" &&
-            (a.chain_type ?? "ethereum") === l.family &&
-            typeof a.address === "string" &&
-            same(a.address, l.address!),
-        )
-      )
-        return;
+      // Access tokens have a session ID and no wallet claims. The server reads and verifies links for them.
+      const needsServerLookup = claims === undefined && typeof p.sid === "string" && p.sid.length > 0;
+      const hasWalletClaim = Array.isArray(claims) && claims.some(
+        (a: Record<string, unknown>) =>
+          a.type === "wallet" &&
+          (a.chain_type ?? "ethereum") === l.family &&
+          typeof a.address === "string" &&
+          same(a.address, l.address!),
+      );
+      if (!needsServerLookup && !hasWalletClaim) return;
       await signInWithPrivy(token);
       const r = await raw("/execution");
       const linked = (await r.json()) as {
@@ -189,7 +190,7 @@ function Bridge({
     syncLinked,
   };
   useEffect(() => {
-    if (identityToken && privy.authenticated) {
+    if (privy.authenticated) {
       void latest.current.exchange();
       void latest.current.syncLinked();
     }

@@ -11,17 +11,30 @@ export function useLiveAccount() {
     [production],
   );
   const service = useQ(async () => {
-    if (!production) return false;
+    if (!production) return null;
     const response = await fetch("/v1/live/status", { cache: "no-store" });
-    if (!response.ok) return false;
-    const status = (await response.json()) as { enabled?: boolean };
-    return status.enabled === true;
+    if (!response.ok) throw Error("Live status unavailable.");
+    return (await response.json()) as { enabled?: boolean; originVerified?: boolean };
   }, [production]);
   const signedIn = !!account.data;
   useEffect(() => {
     if (!signedIn) return;
-    const timer = setInterval(account.reload, 20000);
+    const timer = setInterval(() => {
+      account.reload();
+      service.reload();
+    }, 20000);
     return () => clearInterval(timer);
   }, [signedIn]);
-  return { account, production, enabled: service.data === true };
+  let activationBlocked: string | null = null;
+  if (!production)
+    activationBlocked = "Real orders open when production trading is connected.";
+  else if (service.error)
+    activationBlocked = "Live order status is temporarily unavailable.";
+  else if (!service.data)
+    activationBlocked = "Checking live order access…";
+  else if (service.data.enabled !== true)
+    activationBlocked = "This deployment is currently open for paper trading.";
+  else if (service.data.originVerified !== true)
+    activationBlocked = "Open Quiver on its verified trading domain to authorize real orders.";
+  return { account, production, enabled: activationBlocked === null, activationBlocked };
 }

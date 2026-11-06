@@ -14,7 +14,7 @@ export const ErrorCode = z.enum([
   "secrets_unavailable", "rpc_url_blocked", // M5.9
   "wallet_link_unavailable", // M5.11
   "not_available", // M5.18: feature exists in the product but is "coming soon" (HTTP 501)
-  "mode_not_enabled", // testnet/live gated by user approval
+  "mode_not_enabled", "live_order_blocked",
   "backtest_data_unavailable", "backtest_range_invalid", "limit_exceeded", "run_already_active", "insufficient_balance", /* M5.24e */ "internal",
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
@@ -40,5 +40,5 @@ export const HTTP_STATUS: Record<ErrorCode, number> = {
   session_key_missing: 412, session_key_expired: 412, session_key_revoked: 412, session_key_policy_violation: 422,
   session_key_cap_ratio: 422, session_key_slippage_above_cap: 422, session_key_expiry_too_long: 422, session_key_policy_hash_mismatch: 422, signing_unavailable: 503,
   alert_url_blocked: 422, auth_unavailable: 503, wallet_link_invalid: 422, vision_unavailable: 503, image_invalid: 422, secrets_unavailable: 503, rpc_url_blocked: 422, wallet_link_unavailable: 503,
-  not_available: 501, mode_not_enabled: 403, backtest_data_unavailable: 422, backtest_range_invalid: 422, limit_exceeded: 429, run_already_active: 409, insufficient_balance: 422, internal: 500,
+  not_available: 501, mode_not_enabled: 403, live_order_blocked: 422, backtest_data_unavailable: 422, backtest_range_invalid: 422, limit_exceeded: 429, run_already_active: 409, insufficient_balance: 422, internal: 500,
 };

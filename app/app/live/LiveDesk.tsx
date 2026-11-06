@@ -65,7 +65,7 @@ function DeskDialog({
 
 export default function LiveDesk() {
   const router = useRouter();
-  const { account, production } = useLiveAccount();
+  const { account, production, activationBlocked } = useLiveAccount();
   const strategies = useQ(() => api.strategies(), [production]);
   const [net, setNet] = useState<LiveNetwork>("hyperliquid-mainnet");
   const runs = account.data?.runs ?? [];
@@ -89,6 +89,7 @@ export default function LiveDesk() {
           >
             <LiveAccessPanel
               account={account.data}
+              activationBlocked={activationBlocked}
               network={net}
               onChange={account.reload}
             />

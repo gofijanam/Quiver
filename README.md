@@ -48,6 +48,22 @@ signed edge location proof, wallet authorization and venue checks.
   `originVerified` through that domain and reject direct or forged requests
   before enabling mainnet. Run `ops/check-railway-edge.ts` with the engine's
   tsx loader to test the signature path locally.
+- Before enabling real orders, run the read-only Railway preflight through
+  both origins. The custom domain must prove the location while the direct
+  Railway domain rejects a forged proof.
+
+  ```sh
+  node services/backend/scripts/ops/preflight.mjs --railway --profile=paper \
+    --site=https://trading.example.com --direct-origin=https://your-web.up.railway.app
+  ```
+
+  Check the mainnet engine variables with `--railway --profile=live --env`.
+  Set `SOLANA_READ_RPC`, `MAINNET_READONLY_RPC_URL` and the server-only
+  `JUPITER_API_KEY`. The Jupiter queue defaults to the free server tier
+  cadence with `JUPITER_MIN_INTERVAL_MS=1100`. Lower the interval only if the
+  configured plan supports that request rate. After switching profiles, repeat
+  the two-origin preflight with `--profile=live` and set the uptime workflow's
+  origin and expected execution to the verified site and `paper_and_mainnet`.
 
 ## Local development
 

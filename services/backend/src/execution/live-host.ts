@@ -239,6 +239,7 @@ export class MainnetHost {
       new SolanaMainnet({
         rpcUrl: d.config.SOLANA_READ_RPC,
         jupiterKey: d.config.JUPITER_API_KEY,
+        jupiterMinIntervalMs: d.config.JUPITER_MIN_INTERVAL_MS,
         now: d.now,
       });
     this.rh =

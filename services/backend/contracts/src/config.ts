@@ -108,6 +108,7 @@ export const RawConfig = z.object({
   HL_TESTNET_ORDERS: z.enum(["true","false"]).default("false"),
   SOLANA_READ_RPC: z.string().url().optional(),
   JUPITER_API_KEY: opt,
+  JUPITER_MIN_INTERVAL_MS: z.coerce.number().int().min(120).max(10_000).default(1100),
   JUPITER_PRICE_API_URL: z.string().url().default("https://api.jup.ag/price/v3"),
   /** SSE heartbeat interval and per-subscriber queue bound (backpressure). */
   SSE_HEARTBEAT_MS: z.coerce.number().int().min(1000).max(60_000).default(15_000),

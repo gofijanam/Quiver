@@ -36,6 +36,7 @@ const KILL_REASON: Record<ErrorCode, string> = {
   session_key_missing: "Session key problem.", session_key_expired: "Session key problem.", session_key_revoked: "Session key problem.", session_key_policy_violation: "Session key problem.",
   session_key_cap_ratio: "Session key problem.", session_key_slippage_above_cap: "Session key problem.", session_key_expiry_too_long: "Session key problem.", session_key_policy_hash_mismatch: "Session key problem.",
   signing_unavailable: "Signing is unavailable right now.", alert_url_blocked: "Couldn’t stop it.", mode_not_enabled: "That mode isn’t enabled.",
+  live_order_blocked: "The venue blocked the order.",
   backtest_data_unavailable: "Couldn’t stop it.", backtest_range_invalid: "Couldn’t stop it.", limit_exceeded: "A usage limit was hit. Retry in a moment.",
   run_already_active: "The run is busy. Retry in a moment.", insufficient_balance: "Couldn’t stop it.", internal: "Something went wrong on our side.", not_available: "Couldn’t stop it.",
 };

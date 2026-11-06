@@ -5,6 +5,7 @@ import {
   environmentChecks,
   apiChecks,
   siteChecks,
+  railwayEdgeChecks,
 } from "./preflight.mjs";
 
 const origin = "https://workspace.example";
@@ -284,4 +285,25 @@ test("site proxy proves its trusted location before mainnet handoff", async () =
     ),
   );
   assert.equal(calls, 2);
+});
+
+test("Railway proves the public edge and rejects direct spoofing while writes are closed", async () => {
+  const direct = "https://quiver-web.up.railway.app";
+  const mock = (spoofAccepted) => async (url, init) => {
+    assert.equal(url.pathname, "/v1/live/status");
+    assert.equal(init.redirect, "error");
+    const throughEdge = url.origin === origin;
+    if (!throughEdge) {
+      assert.equal(url.origin, direct);
+      assert.equal(init.headers.origin, origin);
+      assert.equal(init.headers["cf-ipcountry"], "DE");
+      assert.ok(init.headers["x-quiver-origin-proof"]);
+    }
+    return Response.json({ network: "mainnet", enabled: false, originVerified: throughEdge || spoofAccepted });
+  };
+  assert(ok(await railwayEdgeChecks(origin, direct, "paper", mock(false))));
+  assert(!ok(await railwayEdgeChecks(origin, direct, "paper", mock(true))));
+  assert(!ok(await railwayEdgeChecks(origin, direct, "live", mock(false))));
+  assert(!ok(await railwayEdgeChecks(origin, origin, "paper", mock(false))));
+  assert(ok(environmentChecks({ ...paper, ...secrets, LIVE_EXECUTION_PROFILE: "venue-wallets" }, "paper")));
 });

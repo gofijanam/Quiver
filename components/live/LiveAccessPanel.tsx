@@ -31,6 +31,7 @@ import { signHlRevoke } from "@/lib/wallet/live-hl-owner";
 
 type Props = {
   account: Account | null;
+  activationBlocked: string | null;
   onChange: () => void | Promise<void>;
   network?: LiveNetwork;
 };
@@ -207,6 +208,7 @@ function ConsentForm({
 
 export default function LiveAccessPanel({
   account,
+  activationBlocked,
   onChange,
   network = "hyperliquid-mainnet",
 }: Props) {
@@ -283,7 +285,7 @@ export default function LiveAccessPanel({
     }
   }
   async function consent(residence: string, nonUs: boolean, limits: Limits) {
-    if (!account) return;
+    if (!account || activationBlocked) return;
     await run(async () => {
       await connected("/consent", {
         version: account.termsVersion,
@@ -316,6 +318,7 @@ export default function LiveAccessPanel({
     }, false);
   const manageGrant = () =>
     run(async (guard) => {
+      if (activationBlocked) throw Error(activationBlocked);
       if (!ackAgent || !address)
         throw Error("Review the grant before authorizing.");
       const signer = await wallet.selectEvm(address);
@@ -392,9 +395,11 @@ export default function LiveAccessPanel({
           {account
             ? account.paused
               ? "Paused"
-              : recent
-                ? "Enabled"
-                : "Setup required"
+              : activationBlocked
+                ? "Activation pending"
+                : recent
+                  ? "Enabled"
+                  : "Setup required"
             : "Wallet setup"}
         </span>
       </header>
@@ -417,6 +422,7 @@ export default function LiveAccessPanel({
         </div>
       ) : (
         <div className="divide-y divide-line">
+          {activationBlocked && <p role="status" className={"px-5 py-3 " + quiet}>{activationBlocked}</p>}
           <div className="grid gap-3 p-5">
             <div className="grid gap-3 sm:grid-cols-[1fr_minmax(0,1.4fr)]">
               <label className={label}>
@@ -564,7 +570,7 @@ export default function LiveAccessPanel({
               )}
               <ChevronDown className="group-open:rotate-180" size={15} />
             </summary>
-            <ConsentForm account={account} disabled={busy} save={consent} />
+            <ConsentForm account={account} disabled={busy || !!activationBlocked} save={consent} />
           </details>
           {net === "hyperliquid-mainnet" && (
             <details className="group p-5">
@@ -629,7 +635,7 @@ export default function LiveAccessPanel({
                   <button
                     type="button"
                     className={action}
-                    disabled={busy || !recent || !address || !ackAgent}
+                    disabled={busy || !!activationBlocked || !recent || !address || !ackAgent}
                     onClick={() => void manageGrant()}
                   >
                     Authorize mainnet agent

@@ -7,12 +7,21 @@ import { HostError } from "../workflows/host";
 import { Funding, MainnetHost, Net, publicError } from "./live-host";
 import { LiveLimits } from "./live-authority";
 import { verifiedEdgeCountry } from "./live-region";
+import type { ErrorCode } from "../../contracts/src/errors";
 
 type Env = { Variables: { user: User; requestId: string } };
 const signature = z.string().regex(/^0x[0-9a-fA-F]{130}$/);
 const txHash = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
 const digest = z.string().regex(/^[0-9a-f]{64}$/);
 const orderId = z.string().regex(/^[0-9a-zA-Z_.:-]{1,105}$/);
+const codes = {
+  403: "forbidden",
+  404: "not_found",
+  409: "conflict",
+  422: "live_order_blocked",
+  429: "rate_limited",
+  503: "service_unavailable",
+} as const satisfies Record<HostError["status"], ErrorCode>;
 const user = (c: Context<Env>) => c.get("user");
 async function body<T extends z.ZodType>(
   c: Context<Env>,
@@ -67,24 +76,20 @@ export function liveRoutes(
     await next();
   });
   r.onError((e, c) => {
-    const status = e instanceof HostError ? e.status : 422;
+    const throttled = "code" in e && e.code === "rate_limited";
+    const status = e instanceof HostError ? e.status : throttled ? 429 : 422;
+    const retry = throttled && "retryAfterSec" in e ? e.retryAfterSec : undefined;
+    const retryAfterSec = typeof retry === "number" && Number.isSafeInteger(retry) && retry > 0 ? retry : undefined;
+    if (retryAfterSec) c.header("Retry-After", String(retryAfterSec));
     return c.json(
       {
         error: {
-          code:
-            status === 403
-              ? "forbidden"
-              : status === 404
-                ? "not_found"
-                : status === 429
-                  ? "rate_limited"
-                  : status === 503
-                    ? "unavailable"
-                    : "live_order_blocked",
+          code: codes[status],
           message: publicError(
             e instanceof Error ? e.message : "Mainnet verification failed.",
           ),
           requestId: c.get("requestId"),
+          retryAfterSec,
         },
       },
       status,

@@ -64,14 +64,13 @@ function required(value, min = 1) {
   );
 }
 function profileOf(env) {
-  if (env.LIVE_EXECUTION_PROFILE === "venue-wallets") return "live";
-  if (env.LIVE_EXECUTION_PROFILE && env.LIVE_EXECUTION_PROFILE !== "legacy")
+  if (env.LIVE_EXECUTION_PROFILE && !["legacy", "venue-wallets"].includes(env.LIVE_EXECUTION_PROFILE))
     return null;
-  return env.QUIVR_MAINNET_ENABLED === "true" ||
+  const mainnet = env.QUIVR_MAINNET_ENABLED === "true" ||
     env.CHAIN_ID === "4663" ||
-    env.QUIVR_MODE === "mainnet"
-    ? null
-    : "paper";
+    env.QUIVR_MODE === "mainnet";
+  if (!mainnet) return "paper";
+  return env.LIVE_EXECUTION_PROFILE === "venue-wallets" ? "live" : null;
 }
 function profileChecks(env, expected) {
   const actual = profileOf(env);
@@ -400,6 +399,31 @@ export async function siteChecks(endpoint, profile, fetcher = fetch) {
   }
   return [checked("Website to mainnet API with verified location", false)];
 }
+export async function railwayEdgeChecks(siteEndpoint, directEndpoint, profile, fetcher = fetch) {
+  const site = origin(siteEndpoint), direct = origin(directEndpoint);
+  if (!site || !direct || site === direct)
+    return [checked("Separate HTTPS public and Railway origins", false)];
+  const read = async (base, headers = {}) => {
+    try {
+      const response = await fetcher(new URL("/v1/live/status", base), {
+        method: "GET", redirect: "error", signal: AbortSignal.timeout(10000),
+        headers: { accept: "application/json", ...headers },
+      });
+      return response.ok ? await response.json() : null;
+    } catch { return null; }
+  };
+  const [edge, bypass] = await Promise.all([
+    read(site),
+    read(direct, { origin: site, "cf-ipcountry": "DE", "x-quiver-origin-proof": "forged-release-probe" }),
+  ]);
+  const expectedEnabled = profile === "live";
+  return [
+    checked("Public domain proves location at the selected execution mode",
+      edge?.network === "mainnet" && edge.enabled === expectedEnabled && edge.originVerified === true),
+    checked("Direct Railway rejects forged location proof",
+      bypass?.network === "mainnet" && bypass.enabled === expectedEnabled && bypass.originVerified === false),
+  ];
+}
 export async function main(
   args,
   env,
@@ -409,48 +433,74 @@ export async function main(
     args.some(
       (a) =>
         a !== "--env" &&
+        a !== "--railway" &&
         !a.startsWith("--api=") &&
         !a.startsWith("--profile=") &&
-        !a.startsWith("--site="),
+        !a.startsWith("--site=") &&
+        !a.startsWith("--direct-origin="),
     ) ||
     args.filter((a) => a.startsWith("--api=")).length > 1 ||
     args.filter((a) => a.startsWith("--profile=")).length > 1 ||
-    args.filter((a) => a.startsWith("--site=")).length > 1
+    args.filter((a) => a.startsWith("--site=")).length > 1 ||
+    args.filter((a) => a.startsWith("--direct-origin=")).length > 1
   ) {
     console.error(
-      "Usage: node scripts/ops/preflight.mjs [--env] [--profile=paper|live] [--api=https://host] [--site=https://website]",
+      "Usage: node scripts/ops/preflight.mjs [--railway] [--env] [--profile=paper|live] [--api=https://host] [--site=https://website] [--direct-origin=https://railway]",
     );
     return 2;
   }
+  const railway = args.includes("--railway");
+  const api = args.find((a) => a.startsWith("--api="));
+  const site = args.find((a) => a.startsWith("--site="));
+  const direct = args.find((a) => a.startsWith("--direct-origin="));
+  if ((direct && (!railway || !site)) || (railway && !api && !site && !args.includes("--env"))) {
+    console.error("Select the Railway environment or a site to verify. A direct origin requires the public site.");
+    return 2;
+  }
   let spec;
-  try {
-    spec = blueprintChecks(readFileSync(resolve(base, "render.yaml"), "utf8"), {
-      hasBackup: existsSync(
-        resolve(base, "services/backend/scripts/ops/database-backup.sh"),
-      ),
-    });
-  } catch {
-    console.error("FAIL Read release Blueprint");
-    return 1;
+  if (!railway) {
+    try {
+      spec = blueprintChecks(readFileSync(resolve(base, "render.yaml"), "utf8"), {
+        hasBackup: existsSync(
+          resolve(base, "services/backend/scripts/ops/database-backup.sh"),
+        ),
+      });
+    } catch {
+      console.error("FAIL Read release Blueprint");
+      return 1;
+    }
   }
   const explicit = args.find((a) => a.startsWith("--profile="))?.slice(10),
-    profile = explicit ?? spec.profile;
+    profile = explicit ?? spec?.profile ?? "paper";
   if (!["paper", "live"].includes(profile)) {
     console.error("Select paper or live profile.");
     return 2;
   }
-  const checks = [
+  const checks = spec ? [
     ...spec.checks,
     checked("Blueprint matches requested profile", profile === spec.profile),
-  ];
-  if (args.includes("--env"))
-    checks.push(
-      ...environmentChecks(env, profile, spec.env.QUIVER_EDGE_PUBLIC_KEY),
-    );
-  const api = args.find((a) => a.startsWith("--api="));
+  ] : [];
+  if (args.includes("--env")) {
+    checks.push(...environmentChecks(env, profile, spec?.env.QUIVER_EDGE_PUBLIC_KEY));
+    if (railway && profile === "live") {
+      const rpc = (value, publicHostname) => {
+        try {
+          const url = new URL(value);
+          return url.protocol === "https:" && !url.username && !url.password && !url.hash && url.hostname !== publicHostname;
+        } catch { return false; }
+      };
+      checks.push(
+        checked("Jupiter server key", required(env.JUPITER_API_KEY)),
+        checked("Dedicated Solana mainnet RPC", rpc(env.SOLANA_READ_RPC, "api.mainnet-beta.solana.com")),
+        checked("Dedicated Robinhood mainnet RPC", rpc(env.MAINNET_READONLY_RPC_URL, "rpc.mainnet.chain.robinhood.com")),
+      );
+    }
+  }
   if (api) checks.push(...(await apiChecks(api.slice(6), profile)));
-  const site = args.find((a) => a.startsWith("--site="));
   if (site) checks.push(...(await siteChecks(site.slice(7), profile)));
+  if (site && direct) checks.push(...(await railwayEdgeChecks(site.slice(7), direct.slice(16), profile)));
+  if (railway && profile === "live" && site && !direct)
+    checks.push(checked("Direct Railway origin supplied for spoof protection check", false));
   for (const c of checks) console.log((c.ok ? "PASS " : "FAIL ") + c.label);
   return validOutput(checks) ? 0 : 1;
 }

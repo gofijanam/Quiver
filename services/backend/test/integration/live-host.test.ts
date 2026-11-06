@@ -23,6 +23,7 @@ import type {
 } from "../../src/execution/robinhood-mainnet";
 import { createLedger } from "../../src/execution/ledger";
 import { Risk, Strategy } from "../../contracts/src/strategy";
+import { ApiError } from "../../contracts/src/errors";
 
 const wallet = "0x1111111111111111111111111111111111111111",
   origin = "https://quiver.example";
@@ -178,9 +179,12 @@ describe("mainnet HTTP boundaries", () => {
       c.set("requestId", "check");
       await next();
     });
+    let throttled = false;
     app.route(
       "/v1/live",
-      liveRoutes(host, () => {}),
+      liveRoutes(host, () => {
+        if (throttled) throw Object.assign(new Error("Too many requests."), { code: "rate_limited", retryAfterSec: 4 });
+      }),
     );
     const req = (
       uid: string,
@@ -218,6 +222,15 @@ describe("mainnet HTTP boundaries", () => {
     };
     expect((await req(a.id, "/consent", consent)).status).toBe(403);
     expect((await req(a.id, "/consent", consent, true)).status).toBe(200);
+    const invalidReview = await req(a.id, "/review", {});
+    expect(invalidReview.status).toBe(422);
+    expect(ApiError.parse(await invalidReview.json()).error.code).toBe("live_order_blocked");
+    throttled = true;
+    const limited = await req(a.id, "/review", {});
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBe("4");
+    expect(ApiError.parse(await limited.json()).error.retryAfterSec).toBe(4);
+    throttled = false;
     expect(
       (await req(b.id, "/review", { strategyId: "stg_mainnet", version: 1 }))
         .status,
@@ -332,7 +345,9 @@ describe("mainnet HTTP boundaries", () => {
     sample.provenance = "imported";
     expect(() => paperLivePlan(sample, 3)).toThrow(/editable/);
     fail = true;
-    expect((await req(a.id, "/start", start, true)).status).toBe(503);
+    const unavailable = await req(a.id, "/start", start, true);
+    expect(unavailable.status).toBe(503);
+    expect(ApiError.parse(await unavailable.json()).error.code).toBe("service_unavailable");
     await host.stop();
   });
 });

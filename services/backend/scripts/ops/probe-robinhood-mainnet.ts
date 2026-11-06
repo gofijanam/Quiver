@@ -1,7 +1,7 @@
 // Read-only release evidence. Run in services/backend with: node --import tsx scripts/ops/probe-robinhood-mainnet.ts
 import { RobinhoodMainnet } from "../../src/execution/robinhood-mainnet";
 const v = new RobinhoodMainnet({
-  rpcUrl: process.env.ROBINHOOD_MAINNET_RPC_URL,
+  rpcUrl: process.env.MAINNET_READONLY_RPC_URL ?? process.env.ROBINHOOD_MAINNET_RPC_URL,
 });
 try {
   const chain = await v.verifyDeployment();

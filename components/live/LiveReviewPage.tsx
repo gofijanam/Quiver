@@ -88,14 +88,14 @@ export default function LiveReviewPage({
   id: string;
   version: number | null;
 }) {
-  const { account, production, enabled } = useLiveAccount();
+  const { account, production, enabled, activationBlocked } = useLiveAccount();
   const router = useRouter();
   const [epoch, setEpoch] = useState(0);
   useEffect(() => onSession(() => setEpoch((n) => n + 1)), []);
   return (
     <ReviewContent
       key={epoch}
-      {...{ id, version, production, enabled, account }}
+      {...{ id, version, production, enabled, account, activationBlocked }}
       onStart={(run) => router.push(liveRunPath(run))}
     />
   );
@@ -107,6 +107,7 @@ function ReviewContent({
   production,
   enabled,
   account,
+  activationBlocked,
   onStart,
 }: {
   id: string;
@@ -114,6 +115,7 @@ function ReviewContent({
   production: boolean;
   enabled: boolean;
   account: ReturnType<typeof useLiveAccount>["account"];
+  activationBlocked: string | null;
   onStart: (id: string) => void;
 }) {
   const isPaper = /^(srvpaper|paper)_/.test(id);
@@ -238,6 +240,7 @@ function ReviewContent({
                 review={review}
                 account={account.data}
                 connectedApi={enabled}
+                activationBlocked={activationBlocked}
                 onStart={onStart}
                 beforeStart={
                   browserPaper
@@ -273,16 +276,16 @@ function ReviewContent({
                   · Mainnet
                 </p>
                 <p className="live-note">
-                  {!production
-                    ? "Production wallet activation is pending. You can review amounts and order permissions here."
-                    : account.data?.consent && !account.data.paused
+                  {activationBlocked ??
+                    (account.data?.consent && !account.data.paused
                       ? "Account limits are active. Each allocation remains subject to your available balance."
-                      : "Complete wallet setup and account limits here before authorizing a run."}
+                      : "Complete wallet setup and account limits here before authorizing a run.")}
                 </p>
               </section>
               {production && (
                 <LiveAccessPanel
                   account={account.data}
+                  activationBlocked={activationBlocked}
                   network={network ?? undefined}
                   onChange={account.reload}
                 />

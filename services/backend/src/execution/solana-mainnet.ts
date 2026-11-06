@@ -145,6 +145,7 @@ export type FinalSolanaProof = {
 type Options = {
   rpcUrl?: string;
   jupiterKey?: string;
+  jupiterMinIntervalMs?: number;
   fetch?: typeof fetch;
   now?: () => number;
 };
@@ -658,7 +659,7 @@ export class SolanaMainnet {
   private async jupiter(url: string) {
     const at = this.now(),
       start = Math.max(at, this.nextJupiter),
-      spacing = this.options.jupiterKey ? 120 : 2100;
+      spacing = this.options.jupiterKey ? this.options.jupiterMinIntervalMs ?? 1100 : 2100;
     ensure(
       start - at <= 12000,
       "Jupiter quote queue is full; retry after the current request",

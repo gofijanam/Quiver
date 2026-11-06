@@ -19,6 +19,7 @@ export default function LiveAllocation({
   review,
   account,
   connectedApi,
+  activationBlocked,
   onStart,
   beforeStart,
 }: {
@@ -26,6 +27,7 @@ export default function LiveAllocation({
   beforeStart?: () => void;
   account: LiveAccount | null;
   connectedApi: boolean;
+  activationBlocked: string | null;
   onStart: (id: string) => void;
 }) {
   const networks = [
@@ -433,7 +435,7 @@ export default function LiveAllocation({
           {!liveReady && (
             <small className="span-two">
               {!connectedApi
-                ? "Real orders become available after production activation."
+                ? activationBlocked
                 : !account
                   ? "Sign in to link a funding wallet."
                   : !review.reviewHash

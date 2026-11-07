@@ -12,4 +12,12 @@ describe("config", () => {
     const c = loadConfig({ QUIVR_MODE: "mock", OPENROUTER_API_KEY: "sk-or-supersecretvalue123" });
     expect(JSON.stringify(describeConfig(c))).not.toContain("supersecret");
   });
+  it("does not log credentials embedded in RPC paths or queries", () => {
+    const c = loadConfig({
+      MAINNET_READONLY_RPC_URL: "https://rpc.example/v2/path-credential",
+      SOLANA_READ_RPC: "https://sol.example/?api-key=query-credential",
+    });
+    expect(describeConfig(c)).toMatchObject({ MAINNET_READONLY_RPC_URL: "set", SOLANA_READ_RPC: "set" });
+    expect(JSON.stringify(describeConfig(c))).not.toContain("credential");
+  });
 });

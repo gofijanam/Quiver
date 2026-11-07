@@ -4,6 +4,7 @@ export function redact(s: string): string {
     .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
     .replace(/eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+/g, "[jwt]")
     .replace(/\bsk-[A-Za-z0-9_-]{8,}/g, "[key]")
+    .replace(/\balch_[A-Za-z0-9_-]{8,}/g, "[key]")
     .replace(/([?&](?:token|key|api_key|apikey|secret)=)[^&\s]+/gi, "$1[redacted]")
     .replace(/\b0x[0-9a-fA-F]{64}\b/g, "[hex64]")
     .replace(/(https?:\/\/)[^/\s:@]+:[^/\s@]+@/g, "$1[creds]@");

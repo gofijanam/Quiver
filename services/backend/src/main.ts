@@ -15,6 +15,9 @@ import { ReadonlyMarket } from "./venues/readonly-market";
 import { MOCK_INSTRUMENTS, Registry } from "./venues/registry";
 import { MemStore } from "./store";
 import { PostgresPersistence } from "./storage/postgres";
+import { redact } from "./lib/redact";
+
+const providerError = (message: string) => redact(message).replace(/https?:\/\/\S+/gi, "[provider endpoint]");
 
 async function boot() {
   const config = loadConfig(process.env);
@@ -40,11 +43,11 @@ async function boot() {
       : m.symbol === "JUP" && jv ? { address: jv.mint, chainId: null, source: jv.source } : null;
     const mk = market;
     warmLoad = async () => {
-      if (jup) await jup.refresh().catch((e) => console.error(JSON.stringify({ level: "warn", msg: "jupiter price unavailable", error: String(e) })));
+      if (jup) await jup.refresh().catch((e) => console.error(JSON.stringify({ level: "warn", msg: "jupiter price unavailable", error: providerError(String(e)) })));
       const r = await mk.refresh();
-      console.log(JSON.stringify({ level: "info", msg: "mainnet-readonly prices loaded", symbols: r.symbols, errors: r.errors }));
+      console.log(JSON.stringify({ level: "info", msg: "mainnet-readonly prices loaded", symbols: r.symbols, errors: r.errors.map(providerError) }));
       let n = Array.isArray(r.errors) ? r.errors.length : 0;
-      if (config.TIINGO_API_KEY) { const m = await mk.loadModeled(new TiingoEod(config.TIINGO_API_KEY), Date.now() - 365 * 86_400_000); n += m.errors.length; console.log(JSON.stringify({ level: "info", msg: "modeled EOD history loaded (tiingo)", errors: m.errors })); }
+      if (config.TIINGO_API_KEY) { const m = await mk.loadModeled(new TiingoEod(config.TIINGO_API_KEY), Date.now() - 365 * 86_400_000); n += m.errors.length; console.log(JSON.stringify({ level: "info", msg: "modeled EOD history loaded (tiingo)", errors: m.errors.map(providerError) })); }
       return { errors: n };
     };
     timer = setInterval(() => void market!.refresh().catch(() => {}), 60_000);

@@ -25,8 +25,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
 export class ConfigError extends Error {
   constructor(msg: string, public keys: string[]) { super(msg); }
 }
-/** Never log values; only report which keys are set. */
+/** Credentials and provider URLs are represented only by their presence. */
 export function describeConfig(c: Config) {
-  const secretish = /KEY|SECRET|JWT|TOKEN_?$|DATABASE_URL|REDIS_URL/;
+  const secretish = /KEY|SECRET|JWT|TOKEN_?$|(?:^|_)(?:URL|RPC)$/;
   return Object.fromEntries(Object.entries(c).map(([k, v]) => [k, secretish.test(k) ? (v ? "set" : "unset") : v]));
 }
